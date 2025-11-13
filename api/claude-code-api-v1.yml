@@ -1,0 +1,392 @@
+openapi: 3.1.0
+info:
+  title: Claude Code Analytics API
+  description: >
+    Track Claude Code usage, productivity metrics, and developer activity across 
+    your organization. The Claude Code Analytics API enables you to monitor sessions, 
+    lines of code added/removed, commits, pull requests, tool usage metrics, and 
+    estimated costs broken down by Claude model. This API provides daily aggregated 
+    metrics with user-level data to help analyze developer productivity, justify 
+    ROI, and optimize Claude Code adoption.
+  version: 1.0.0
+  contact:
+    email: support@anthropic.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.anthropic.com/v1
+    description: Production server
+
+security:
+  - adminApiKey: []
+
+paths:
+  /organizations/usage_report/claude_code:
+    get:
+      operationId: getClaudeCodeUsageReport
+      summary: Get Claude Code Usage Report
+      description: >
+        Retrieve Claude Code analytics for a specific day with user-level productivity 
+        metrics, tool usage, and cost data. Returns daily aggregated metrics including 
+        sessions, lines of code, commits, pull requests, tool acceptance rates, and 
+        estimated costs broken down by Claude model. Supports cursor-based pagination 
+        for organizations with large numbers of users. Data is available with up to 
+        1-hour delay for consistency.
+      tags:
+        - Claude Code Analytics
+      parameters:
+        - name: starting_at
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            pattern: '^\d{4}-\d{2}-\d{2}$'
+          description: UTC date in YYYY-MM-DD format. Returns metrics for this single day only.
+          example: "2025-11-01"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 1000
+          description: Number of records per page (default 20, max 1000)
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Opaque cursor token from previous response's next_page field for pagination
+      responses:
+        '200':
+          description: Successfully retrieved Claude Code usage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClaudeCodeUsageReportResponse'
+              example:
+                data:
+                  - date: "2025-11-01T00:00:00Z"
+                    actor:
+                      user_actor:
+                        email_address: "developer@company.com"
+                    organization_id: "org_01h1234abcd5678efgh90"
+                    customer_type: "subscription"
+                    terminal_type: "vscode"
+                    num_sessions: 5
+                    lines_of_code:
+                      added: 342
+                      removed: 89
+                    commits_by_claude_code: 3
+                    pull_requests_by_claude_code: 1
+                    edit_tool:
+                      accepted: 45
+                      rejected: 5
+                    write_tool:
+                      accepted: 23
+                      rejected: 2
+                    notebook_edit_tool:
+                      accepted: 0
+                      rejected: 0
+                    model_breakdown:
+                      - model: "claude-sonnet-4-5-20250929"
+                        tokens:
+                          input: 125000
+                          output: 45000
+                          cache_read: 80000
+                          cache_creation: 25000
+                        estimated_cost:
+                          amount: 189
+                          currency: "USD"
+                has_more: true
+                next_page: "eyJsYXN0X2lkIjogIjEyMzQ1IiwgImxhc3RfdHMiOiAiMjAyNS0xMS0wMVQwMDowMDowMFoifQ=="
+        '400':
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  type: "invalid_request_error"
+                  message: "Invalid date format. Use YYYY-MM-DD format."
+        '401':
+          description: Unauthorized - invalid or missing Admin API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  type: "authentication_error"
+                  message: "Invalid Admin API key. Please provide a valid Admin API key starting with 'sk-ant-admin'."
+        '403':
+          description: Forbidden - insufficient permissions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  type: "permission_error"
+                  message: "Admin API access required. Only organization members with the admin role can use this endpoint."
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  type: "rate_limit_error"
+                  message: "Rate limit exceeded. Please retry after the specified time."
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  type: "api_error"
+                  message: "An internal error occurred. Please try again later."
+
+components:
+  securitySchemes:
+    adminApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: >
+        Admin API key (starting with sk-ant-admin...). Only organization members 
+        with the admin role can provision Admin API keys through the Claude Console 
+        at https://console.anthropic.com/settings/admin-keys
+
+  schemas:
+    ClaudeCodeUsageReportResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClaudeCodeUsageRecord'
+          description: Array of usage records, one per user per day
+        has_more:
+          type: boolean
+          description: Whether there are more results available
+        next_page:
+          type: string
+          nullable: true
+          description: Opaque cursor token for fetching the next page. Use this value in the 'page' parameter of your next request. Null if has_more is false.
+      required:
+        - data
+        - has_more
+
+    ClaudeCodeUsageRecord:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date-time
+          description: Date in RFC 3339 format (UTC timestamp)
+          example: "2025-11-01T00:00:00Z"
+        actor:
+          $ref: '#/components/schemas/Actor'
+        organization_id:
+          type: string
+          description: Organization UUID
+          example: "org_01h1234abcd5678efgh90"
+        customer_type:
+          type: string
+          enum: [api, subscription]
+          description: Type of customer account (api for API customers, subscription for Pro/Team customers)
+        terminal_type:
+          type: string
+          description: Type of terminal or environment where Claude Code was used
+          example: "vscode"
+        num_sessions:
+          type: integer
+          description: Number of distinct Claude Code sessions initiated by this actor
+          example: 5
+        lines_of_code:
+          $ref: '#/components/schemas/LinesOfCode'
+        commits_by_claude_code:
+          type: integer
+          description: Number of git commits created through Claude Code's commit functionality
+          example: 3
+        pull_requests_by_claude_code:
+          type: integer
+          description: Number of pull requests created through Claude Code's PR functionality
+          example: 1
+        edit_tool:
+          $ref: '#/components/schemas/ToolMetrics'
+        write_tool:
+          $ref: '#/components/schemas/ToolMetrics'
+        notebook_edit_tool:
+          $ref: '#/components/schemas/ToolMetrics'
+        model_breakdown:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelUsage'
+          description: Token usage and estimated costs broken down by Claude model
+      required:
+        - date
+        - actor
+        - organization_id
+        - customer_type
+        - terminal_type
+        - num_sessions
+        - lines_of_code
+        - commits_by_claude_code
+        - pull_requests_by_claude_code
+        - edit_tool
+        - write_tool
+        - notebook_edit_tool
+        - model_breakdown
+
+    Actor:
+      type: object
+      description: The user or API key that performed the Claude Code actions
+      properties:
+        user_actor:
+          $ref: '#/components/schemas/UserActor'
+        api_actor:
+          $ref: '#/components/schemas/ApiActor'
+
+    UserActor:
+      type: object
+      properties:
+        email_address:
+          type: string
+          format: email
+          description: Email address for users who authenticate via OAuth
+          example: "developer@company.com"
+      required:
+        - email_address
+
+    ApiActor:
+      type: object
+      properties:
+        api_key_name:
+          type: string
+          description: API key name for users who authenticate via API key
+          example: "Production API Key"
+      required:
+        - api_key_name
+
+    LinesOfCode:
+      type: object
+      properties:
+        added:
+          type: integer
+          description: Total number of lines of code added across all files by Claude Code
+          example: 342
+        removed:
+          type: integer
+          description: Total number of lines of code removed across all files by Claude Code
+          example: 89
+      required:
+        - added
+        - removed
+
+    ToolMetrics:
+      type: object
+      properties:
+        accepted:
+          type: integer
+          description: Number of tool proposals that the user accepted
+          example: 45
+        rejected:
+          type: integer
+          description: Number of tool proposals that the user rejected
+          example: 5
+      required:
+        - accepted
+        - rejected
+
+    ModelUsage:
+      type: object
+      properties:
+        model:
+          type: string
+          description: Claude model identifier
+          example: "claude-sonnet-4-5-20250929"
+        tokens:
+          $ref: '#/components/schemas/TokenUsage'
+        estimated_cost:
+          $ref: '#/components/schemas/EstimatedCost'
+      required:
+        - model
+        - tokens
+        - estimated_cost
+
+    TokenUsage:
+      type: object
+      properties:
+        input:
+          type: integer
+          description: Input token count for this model
+          example: 125000
+        output:
+          type: integer
+          description: Output token count for this model
+          example: 45000
+        cache_read:
+          type: integer
+          description: Cache read token count for this model
+          example: 80000
+        cache_creation:
+          type: integer
+          description: Cache creation token count for this model
+          example: 25000
+      required:
+        - input
+        - output
+        - cache_read
+        - cache_creation
+
+    EstimatedCost:
+      type: object
+      properties:
+        amount:
+          type: integer
+          description: Estimated cost in cents USD
+          example: 189
+        currency:
+          type: string
+          description: Currency code for the cost amount
+          example: "USD"
+      required:
+        - amount
+        - currency
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            type:
+              type: string
+              description: Error type
+              enum:
+                - invalid_request_error
+                - authentication_error
+                - permission_error
+                - rate_limit_error
+                - api_error
+            message:
+              type: string
+              description: Human-readable error message
+          required:
+            - type
+            - message
+      required:
+        - error
+
+tags:
+  - name: Claude Code Analytics
+    description: Operations for retrieving Claude Code usage, productivity metrics, and developer activity
