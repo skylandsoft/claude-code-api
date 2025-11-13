@@ -1,13 +1,20 @@
 openapi: 3.1.0
 info:
-  title: Claude Code Analytics API
+  title: Claude Admin & Analytics API
   description: >
-    Track Claude Code usage, productivity metrics, and developer activity across 
-    your organization. The Claude Code Analytics API enables you to monitor sessions, 
-    lines of code added/removed, commits, pull requests, tool usage metrics, and 
-    estimated costs broken down by Claude model. This API provides daily aggregated 
-    metrics with user-level data to help analyze developer productivity, justify 
-    ROI, and optimize Claude Code adoption.
+    Comprehensive Admin API for managing your organization's resources including 
+    members, workspaces, API keys, and accessing detailed usage analytics. This API 
+    provides programmatic control over administrative tasks and detailed insights into:
+    
+    - **Organization Management**: Manage organization members, roles, and invitations
+    - **Workspace Management**: Create and manage workspaces and their members
+    - **API Key Management**: List and update API keys across your organization
+    - **Usage Analytics**: Track token consumption, model usage, and request metrics
+    - **Cost Analytics**: Monitor spending and allocate costs by workspace
+    - **Claude Code Analytics**: Analyze developer productivity with Claude Code metrics
+    
+    All Admin API endpoints require a special Admin API key (starting with sk-ant-admin...) 
+    that can only be provisioned by organization members with the admin role.
   version: 1.0.0
   contact:
     email: support@anthropic.com
@@ -22,6 +29,795 @@ security:
   - adminApiKey: []
 
 paths:
+  /organizations/me:
+    get:
+      operationId: getOrganizationInfo
+      summary: Get Organization Info
+      description: >
+        Retrieve information about the organization associated with the Admin API key.
+        This endpoint is useful for programmatically determining which organization 
+        an Admin API key belongs to.
+      tags:
+        - Organization Management
+      responses:
+        '200':
+          description: Successfully retrieved organization information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizationInfo'
+              example:
+                id: "org_01h1234abcd5678efgh90"
+                name: "Acme Corporation"
+                type: "organization"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/users:
+    get:
+      operationId: listOrganizationMembers
+      summary: List Organization Members
+      description: >
+        Retrieve all members of your organization with their roles and details.
+        Supports pagination for organizations with many members.
+      tags:
+        - Organization Member Management
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/BeforeId'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: Successfully retrieved organization members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+              example:
+                data:
+                  - id: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+                    type: "user"
+                    name: "Jane Doe"
+                    email: "[email protected]"
+                    role: "developer"
+                    added_at: "2024-10-30T23:58:27.427722Z"
+                  - id: "user_01XDa2GlnZOn5nPqrStVpZ4R"
+                    type: "user"
+                    name: "John Smith"
+                    email: "[email protected]"
+                    role: "admin"
+                    added_at: "2024-09-15T10:30:00.000000Z"
+                has_more: false
+                first_id: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+                last_id: "user_01XDa2GlnZOn5nPqrStVpZ4R"
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/users/{user_id}:
+    post:
+      operationId: updateOrganizationMemberRole
+      summary: Update Organization Member Role
+      description: >
+        Update the role of an organization member. Note: Organization admins cannot 
+        be removed via the API for security reasons.
+      tags:
+        - Organization Member Management
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the user
+          example: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRoleRequest'
+            example:
+              role: "developer"
+      responses:
+        '200':
+          description: Successfully updated member role
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      operationId: removeOrganizationMember
+      summary: Remove Organization Member
+      description: >
+        Remove a member from the organization. Note: Organization admins cannot 
+        be removed via the API for security reasons.
+      tags:
+        - Organization Member Management
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the user
+          example: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+      responses:
+        '204':
+          description: Successfully removed member
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Cannot remove organization admin
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/invites:
+    get:
+      operationId: listOrganizationInvites
+      summary: List Organization Invites
+      description: >
+        Retrieve all pending invitations to your organization. Organization invites 
+        expire after 21 days.
+      tags:
+        - Organization Invites
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/BeforeId'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: Successfully retrieved organization invites
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      operationId: createOrganizationInvite
+      summary: Create Organization Invite
+      description: >
+        Invite a new member to your organization. Invites expire after 21 days.
+      tags:
+        - Organization Invites
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInviteRequest'
+            example:
+              email: "[email protected]"
+              role: "developer"
+      responses:
+        '201':
+          description: Successfully created invite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invite'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/invites/{invite_id}:
+    delete:
+      operationId: deleteOrganizationInvite
+      summary: Delete Organization Invite
+      description: >
+        Delete a pending organization invite.
+      tags:
+        - Organization Invites
+      parameters:
+        - name: invite_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the invite
+          example: "invite_01AbCdEfGhIjKlMnOpQrStUv"
+      responses:
+        '204':
+          description: Successfully deleted invite
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/workspaces:
+    get:
+      operationId: listWorkspaces
+      summary: List Workspaces
+      description: >
+        Retrieve all workspaces in your organization. Maximum of 100 workspaces 
+        per organization (archived workspaces don't count toward this limit).
+        Note: The default workspace does not appear in this list and has no ID.
+      tags:
+        - Workspace Management
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/BeforeId'
+        - $ref: '#/components/parameters/AfterId'
+        - name: include_archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Whether to include archived workspaces
+      responses:
+        '200':
+          description: Successfully retrieved workspaces
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      operationId: createWorkspace
+      summary: Create Workspace
+      description: >
+        Create a new workspace in your organization. Maximum of 100 workspaces 
+        per organization.
+      tags:
+        - Workspace Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateWorkspaceRequest'
+            example:
+              name: "Production"
+      responses:
+        '201':
+          description: Successfully created workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/workspaces/{workspace_id}:
+    post:
+      operationId: updateWorkspace
+      summary: Update Workspace
+      description: >
+        Update a workspace's properties.
+      tags:
+        - Workspace Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceRequest'
+            example:
+              name: "Production Environment"
+      responses:
+        '200':
+          description: Successfully updated workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/workspaces/{workspace_id}/archive:
+    post:
+      operationId: archiveWorkspace
+      summary: Archive Workspace
+      description: >
+        Archive a workspace. Archived workspaces don't count toward the 100 workspace limit.
+      tags:
+        - Workspace Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Successfully archived workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/workspaces/{workspace_id}/unarchive:
+    post:
+      operationId: unarchiveWorkspace
+      summary: Unarchive Workspace
+      description: >
+        Unarchive a workspace. Cannot unarchive if organization already has 100 active workspaces.
+      tags:
+        - Workspace Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      responses:
+        '200':
+          description: Successfully unarchived workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Workspace'
+        '400':
+          description: Maximum workspace limit reached
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/workspaces/{workspace_id}/members:
+    get:
+      operationId: listWorkspaceMembers
+      summary: List Workspace Members
+      description: >
+        Retrieve all members of a specific workspace with their roles.
+      tags:
+        - Workspace Member Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/BeforeId'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: Successfully retrieved workspace members
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMemberListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      operationId: addWorkspaceMember
+      summary: Add Workspace Member
+      description: >
+        Add a member to a workspace with a specific role. Organization admins 
+        automatically have workspace_admin role to all workspaces.
+      tags:
+        - Workspace Member Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddWorkspaceMemberRequest'
+            example:
+              user_id: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+              workspace_role: "workspace_developer"
+      responses:
+        '201':
+          description: Successfully added member to workspace
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMember'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/workspaces/{workspace_id}/members/{user_id}:
+    get:
+      operationId: getWorkspaceMember
+      summary: Get Workspace Member
+      description: >
+        Retrieve details about a specific workspace member.
+      tags:
+        - Workspace Member Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Successfully retrieved workspace member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMember'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      operationId: updateWorkspaceMember
+      summary: Update Workspace Member
+      description: >
+        Update a workspace member's role. Note: Organization admins and billing 
+        members' roles cannot be changed while they hold those organization roles.
+      tags:
+        - Workspace Member Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UserId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateWorkspaceMemberRequest'
+            example:
+              workspace_role: "workspace_admin"
+      responses:
+        '200':
+          description: Successfully updated workspace member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceMember'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      operationId: removeWorkspaceMember
+      summary: Remove Workspace Member
+      description: >
+        Remove a member from a workspace. Note: Organization admins and billing 
+        members cannot be removed from workspaces while they hold those organization roles.
+      tags:
+        - Workspace Member Management
+      parameters:
+        - $ref: '#/components/parameters/WorkspaceId'
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '204':
+          description: Successfully removed member from workspace
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: Cannot remove organization admin or billing member
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/api_keys:
+    get:
+      operationId: listApiKeys
+      summary: List API Keys
+      description: >
+        Retrieve all API keys in your organization. Note: New API keys can only 
+        be created through the Claude Console for security reasons.
+      tags:
+        - API Key Management
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/BeforeId'
+        - $ref: '#/components/parameters/AfterId'
+      responses:
+        '200':
+          description: Successfully retrieved API keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKeyListResponse'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/api_keys/{api_key_id}:
+    get:
+      operationId: getApiKey
+      summary: Get API Key
+      description: >
+        Retrieve details about a specific API key.
+      tags:
+        - API Key Management
+      parameters:
+        - name: api_key_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the API key
+          example: "apikey_01Rj2N8SVvo6BePZj99NhmiT"
+      responses:
+        '200':
+          description: Successfully retrieved API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      operationId: updateApiKey
+      summary: Update API Key
+      description: >
+        Update an API key's properties such as name or status.
+      tags:
+        - API Key Management
+      parameters:
+        - name: api_key_id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the API key
+          example: "apikey_01Rj2N8SVvo6BePZj99NhmiT"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApiKeyRequest'
+            example:
+              name: "Production API Key - Updated"
+              status: "active"
+      responses:
+        '200':
+          description: Successfully updated API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiKey'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/usage_report/messages:
+    get:
+      operationId: getMessagesUsageReport
+      summary: Get Messages Usage Report
+      description: >
+        Track token consumption across your organization with detailed breakdowns 
+        by model, workspace, service tier, and context window. Provides usage data 
+        in fixed time intervals (1m, 1h, or 1d) with support for filtering and 
+        grouping by various dimensions. Data is typically available within 5 minutes 
+        of API request completion.
+      tags:
+        - Usage and Cost Analytics
+      parameters:
+        - name: starting_at
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Start time for the usage report in RFC 3339 format (UTC)
+          example: "2025-01-08T00:00:00Z"
+        - name: ending_at
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: End time for the usage report in RFC 3339 format (UTC)
+          example: "2025-01-15T00:00:00Z"
+        - name: bucket_width
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["1m", "1h", "1d"]
+          description: >
+            Time bucket granularity. Limits: 1m (max 1440 buckets), 1h (max 168 buckets), 
+            1d (max 31 buckets)
+          example: "1d"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 1000
+          description: Number of records per page
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Opaque cursor token for pagination
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: object
+            properties:
+              api_key_id:
+                type: array
+                items:
+                  type: string
+              workspace_id:
+                type: array
+                items:
+                  type: string
+              model:
+                type: array
+                items:
+                  type: string
+              service_tier:
+                type: array
+                items:
+                  type: string
+                  enum: [default, priority]
+              context_window:
+                type: array
+                items:
+                  type: integer
+          description: Filter results by specific dimensions (JSON object)
+        - name: group_by
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [api_key_id, workspace_id, model, service_tier, context_window]
+          description: Group results by specific dimensions
+      responses:
+        '200':
+          description: Successfully retrieved usage report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagesUsageReportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /organizations/cost_report:
+    get:
+      operationId: getCostReport
+      summary: Get Cost Report
+      description: >
+        Retrieve service-level cost breakdowns in USD. All costs are reported as 
+        decimal strings in lowest units (cents). Supports grouping by workspace or 
+        description for detailed cost allocation. Data is typically available within 
+        5 minutes of API request completion.
+      tags:
+        - Usage and Cost Analytics
+      parameters:
+        - name: starting_at
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: Start time for the cost report in RFC 3339 format (UTC)
+          example: "2025-01-01T00:00:00Z"
+        - name: ending_at
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+          description: End time for the cost report in RFC 3339 format (UTC)
+          example: "2025-01-31T00:00:00Z"
+        - name: bucket_width
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: ["1d"]
+          description: Time bucket granularity (only daily granularity supported)
+          example: "1d"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 1000
+          description: Number of records per page
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Opaque cursor token for pagination
+        - name: group_by
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+              enum: [workspace_id, description]
+          description: Group costs by workspace or description
+      responses:
+        '200':
+          description: Successfully retrieved cost report
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostReportResponse'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
   /organizations/usage_report/claude_code:
     get:
       operationId: getClaudeCodeUsageReport
@@ -165,7 +961,631 @@ components:
         with the admin role can provision Admin API keys through the Claude Console 
         at https://console.anthropic.com/settings/admin-keys
 
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 100
+      description: Number of results to return per page
+
+    BeforeId:
+      name: before_id
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Return results before this ID
+
+    AfterId:
+      name: after_id
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Return results after this ID
+
+    WorkspaceId:
+      name: workspace_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique identifier of the workspace
+      example: "wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ"
+
+    UserId:
+      name: user_id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique identifier of the user
+      example: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+
+  responses:
+    BadRequestError:
+      description: Bad request - invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              type: "invalid_request_error"
+              message: "Invalid request parameters"
+
+    UnauthorizedError:
+      description: Unauthorized - invalid or missing Admin API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              type: "authentication_error"
+              message: "Invalid Admin API key"
+
+    ForbiddenError:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              type: "permission_error"
+              message: "Admin API access required"
+
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              type: "not_found_error"
+              message: "Resource not found"
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              type: "api_error"
+              message: "An internal error occurred"
+
   schemas:
+    # Organization Schemas
+    OrganizationInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Organization UUID
+          example: "org_01h1234abcd5678efgh90"
+        name:
+          type: string
+          description: Name of the organization
+          example: "Acme Corporation"
+        type:
+          type: string
+          enum: [organization]
+          description: Object type
+      required:
+        - id
+        - name
+        - type
+
+    # User Schemas
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          description: User UUID
+          example: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+        type:
+          type: string
+          enum: [user]
+          description: Object type
+        name:
+          type: string
+          description: Full name of the user
+          example: "Jane Doe"
+        email:
+          type: string
+          format: email
+          description: Email address of the user
+          example: "[email protected]"
+        role:
+          type: string
+          enum: [admin, billing, developer, user, claude_code_user]
+          description: Organization-level role
+        added_at:
+          type: string
+          format: date-time
+          description: When the user was added to the organization
+          example: "2024-10-30T23:58:27.427722Z"
+      required:
+        - id
+        - type
+        - name
+        - email
+        - role
+        - added_at
+
+    UserListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        has_more:
+          type: boolean
+          description: Whether there are more results available
+        first_id:
+          type: string
+          description: ID of the first item in the current page
+        last_id:
+          type: string
+          description: ID of the last item in the current page
+      required:
+        - data
+        - has_more
+
+    UpdateUserRoleRequest:
+      type: object
+      properties:
+        role:
+          type: string
+          enum: [billing, developer, user, claude_code_user]
+          description: New organization role (admin role cannot be set via API)
+      required:
+        - role
+
+    # Invite Schemas
+    Invite:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Invite UUID
+          example: "invite_01AbCdEfGhIjKlMnOpQrStUv"
+        type:
+          type: string
+          enum: [invite]
+          description: Object type
+        email:
+          type: string
+          format: email
+          description: Email address of the invitee
+          example: "[email protected]"
+        role:
+          type: string
+          enum: [admin, billing, developer, user, claude_code_user]
+          description: Role that will be assigned upon acceptance
+        status:
+          type: string
+          enum: [pending, accepted, expired]
+          description: Status of the invite
+        created_at:
+          type: string
+          format: date-time
+          description: When the invite was created
+        expires_at:
+          type: string
+          format: date-time
+          description: When the invite expires (21 days from creation)
+      required:
+        - id
+        - type
+        - email
+        - role
+        - status
+        - created_at
+        - expires_at
+
+    InviteListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Invite'
+        has_more:
+          type: boolean
+        first_id:
+          type: string
+        last_id:
+          type: string
+      required:
+        - data
+        - has_more
+
+    CreateInviteRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          description: Email address to invite
+        role:
+          type: string
+          enum: [admin, billing, developer, user, claude_code_user]
+          description: Organization role to assign
+      required:
+        - email
+        - role
+
+    # Workspace Schemas
+    Workspace:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Workspace UUID
+          example: "wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ"
+        type:
+          type: string
+          enum: [workspace]
+          description: Object type
+        name:
+          type: string
+          description: Name of the workspace
+          example: "Production"
+        created_at:
+          type: string
+          format: date-time
+          description: When the workspace was created
+        archived_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When the workspace was archived (null if active)
+      required:
+        - id
+        - type
+        - name
+        - created_at
+
+    WorkspaceListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Workspace'
+        has_more:
+          type: boolean
+        first_id:
+          type: string
+        last_id:
+          type: string
+      required:
+        - data
+        - has_more
+
+    CreateWorkspaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Name for the new workspace
+          minLength: 1
+          maxLength: 255
+      required:
+        - name
+
+    UpdateWorkspaceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: New name for the workspace
+          minLength: 1
+          maxLength: 255
+      required:
+        - name
+
+    # Workspace Member Schemas
+    WorkspaceMember:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [workspace_member]
+          description: Object type
+        user_id:
+          type: string
+          description: User UUID
+          example: "user_01WCz1FkmYMm4gnmykNKUu3Q"
+        workspace_id:
+          type: string
+          description: Workspace UUID
+          example: "wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ"
+        workspace_role:
+          type: string
+          enum: [workspace_admin, workspace_developer, workspace_user, workspace_billing]
+          description: Role within the workspace
+      required:
+        - type
+        - user_id
+        - workspace_id
+        - workspace_role
+
+    WorkspaceMemberListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkspaceMember'
+        has_more:
+          type: boolean
+        first_id:
+          type: string
+        last_id:
+          type: string
+      required:
+        - data
+        - has_more
+
+    AddWorkspaceMemberRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: User UUID to add to workspace
+        workspace_role:
+          type: string
+          enum: [workspace_admin, workspace_developer, workspace_user]
+          description: Role to assign (workspace_billing cannot be manually assigned)
+      required:
+        - user_id
+        - workspace_role
+
+    UpdateWorkspaceMemberRequest:
+      type: object
+      properties:
+        workspace_role:
+          type: string
+          enum: [workspace_admin, workspace_developer, workspace_user]
+          description: New workspace role
+      required:
+        - workspace_role
+
+    # API Key Schemas
+    ApiKey:
+      type: object
+      properties:
+        id:
+          type: string
+          description: API key UUID
+          example: "apikey_01Rj2N8SVvo6BePZj99NhmiT"
+        type:
+          type: string
+          enum: [api_key]
+          description: Object type
+        name:
+          type: string
+          description: Name of the API key
+          example: "Production API Key"
+        partial_key_hint:
+          type: string
+          description: Partial key hint for identification
+          example: "sk-ant-api03-R2D...igAA"
+        status:
+          type: string
+          enum: [active, disabled]
+          description: Status of the API key
+        workspace_id:
+          type: string
+          description: Workspace UUID this key belongs to
+          example: "wrkspc_01JwQvzr7rXLA5AGx3HKfFUJ"
+        created_at:
+          type: string
+          format: date-time
+          description: When the API key was created
+        created_by:
+          type: object
+          properties:
+            id:
+              type: string
+              description: ID of the creator
+            type:
+              type: string
+              enum: [user]
+              description: Type of creator
+          required:
+            - id
+            - type
+      required:
+        - id
+        - type
+        - name
+        - partial_key_hint
+        - status
+        - workspace_id
+        - created_at
+        - created_by
+
+    ApiKeyListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiKey'
+        has_more:
+          type: boolean
+        first_id:
+          type: string
+        last_id:
+          type: string
+      required:
+        - data
+        - has_more
+
+    UpdateApiKeyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: New name for the API key
+        status:
+          type: string
+          enum: [active, disabled]
+          description: New status for the API key
+
+    # Usage Report Schemas
+    MessagesUsageReportResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UsageDataPoint'
+        has_more:
+          type: boolean
+          description: Whether there are more results available
+        next_page:
+          type: string
+          nullable: true
+          description: Cursor token for next page
+      required:
+        - data
+        - has_more
+
+    UsageDataPoint:
+      type: object
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          description: Start of the time bucket
+          example: "2025-01-08T00:00:00Z"
+        end_time:
+          type: string
+          format: date-time
+          description: End of the time bucket
+          example: "2025-01-09T00:00:00Z"
+        api_key_id:
+          type: string
+          nullable: true
+          description: API key UUID (null for Workbench usage)
+        workspace_id:
+          type: string
+          nullable: true
+          description: Workspace UUID (null for default workspace)
+        model:
+          type: string
+          description: Claude model identifier
+          example: "claude-sonnet-4-5-20250929"
+        service_tier:
+          type: string
+          enum: [default, priority]
+          description: Service tier used
+        context_window:
+          type: integer
+          description: Context window size
+          example: 200000
+        tokens:
+          type: object
+          properties:
+            input:
+              type: integer
+              description: Uncached input tokens
+            output:
+              type: integer
+              description: Output tokens
+            cache_read:
+              type: integer
+              description: Cached input tokens read
+            cache_creation:
+              type: integer
+              description: Tokens used for cache creation
+          required:
+            - input
+            - output
+            - cache_read
+            - cache_creation
+        requests:
+          type: integer
+          description: Number of API requests
+        web_search_queries:
+          type: integer
+          description: Number of web search tool uses
+      required:
+        - start_time
+        - end_time
+        - model
+        - service_tier
+        - context_window
+        - tokens
+        - requests
+
+    # Cost Report Schemas
+    CostReportResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostDataPoint'
+        has_more:
+          type: boolean
+        next_page:
+          type: string
+          nullable: true
+      required:
+        - data
+        - has_more
+
+    CostDataPoint:
+      type: object
+      properties:
+        start_time:
+          type: string
+          format: date-time
+          description: Start of the time bucket
+        end_time:
+          type: string
+          format: date-time
+          description: End of the time bucket
+        workspace_id:
+          type: string
+          nullable: true
+          description: Workspace UUID (null for default workspace)
+        description:
+          type: string
+          description: Cost category description
+          example: "API Usage"
+        amount:
+          type: string
+          description: Cost amount in cents USD
+          example: "1250.50"
+        currency:
+          type: string
+          description: Currency code
+          example: "USD"
+      required:
+        - start_time
+        - end_time
+        - description
+        - amount
+        - currency
+
+    # Claude Code Analytics Schemas
     ClaudeCodeUsageReportResponse:
       type: object
       properties:
@@ -376,6 +1796,7 @@ components:
                 - invalid_request_error
                 - authentication_error
                 - permission_error
+                - not_found_error
                 - rate_limit_error
                 - api_error
             message:
@@ -388,5 +1809,19 @@ components:
         - error
 
 tags:
+  - name: Organization Management
+    description: Operations for managing organization information
+  - name: Organization Member Management
+    description: Operations for managing organization members and roles
+  - name: Organization Invites
+    description: Operations for inviting and managing organization invites
+  - name: Workspace Management
+    description: Operations for creating and managing workspaces
+  - name: Workspace Member Management
+    description: Operations for managing workspace members and roles
+  - name: API Key Management
+    description: Operations for listing and updating API keys
+  - name: Usage and Cost Analytics
+    description: Operations for retrieving usage metrics and cost data
   - name: Claude Code Analytics
-    description: Operations for retrieving Claude Code usage, productivity metrics, and developer activity
+    description: Operations for retrieving Claude Code usage and productivity metrics
