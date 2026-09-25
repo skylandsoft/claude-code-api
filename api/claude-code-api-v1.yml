@@ -1541,7 +1541,7 @@ components:
         data:
           type: array
           items:
-            $ref: '#/components/schemas/CostDataPoint'
+            $ref: '#/components/schemas/CostReportBucket'
         has_more:
           type: boolean
         next_page:
@@ -1551,37 +1551,74 @@ components:
         - data
         - has_more
 
-    CostDataPoint:
+    CostReportBucket:
       type: object
       properties:
-        start_time:
+        starting_at:
           type: string
           format: date-time
-          description: Start of the time bucket
-        end_time:
+          description: Start of the time bucket (inclusive)
+        ending_at:
           type: string
           format: date-time
-          description: End of the time bucket
-        workspace_id:
-          type: string
-          nullable: true
-          description: Workspace UUID (null for default workspace)
-        description:
-          type: string
-          description: Cost category description
-          example: "API Usage"
+          description: End of the time bucket (exclusive)
+        results:
+          type: array
+          description: Cost items in the bucket; empty when the bucket has no costs
+          items:
+            $ref: '#/components/schemas/CostReportItem'
+      required:
+        - starting_at
+        - ending_at
+        - results
+
+    CostReportItem:
+      type: object
+      description: >
+        Enumerated fields (cost_type, context_window, service_tier, inference_geo) are kept as plain
+        strings so that values added by the API never break parsing.
+      properties:
         amount:
           type: string
-          description: Cost amount in cents USD
-          example: "1250.50"
+          description: Decimal cost in the lowest currency unit (cents for USD, "123.45" = $1.23)
+          example: "123.78912"
         currency:
           type: string
           description: Currency code
           example: "USD"
+        workspace_id:
+          type: string
+          nullable: true
+          description: Workspace ID (null for the default workspace or when not grouped by workspace)
+        description:
+          type: string
+          nullable: true
+          description: Cost description (null when not grouped by description)
+        cost_type:
+          type: string
+          nullable: true
+          description: "Type of cost: code_execution, session_usage, tokens, web_search"
+        context_window:
+          type: string
+          nullable: true
+          description: "Context window bucket: 0-200k, 200k-1M"
+        model:
+          type: string
+          nullable: true
+          description: Model name
+        service_tier:
+          type: string
+          nullable: true
+          description: "Service tier: batch, standard"
+        token_type:
+          type: string
+          nullable: true
+          description: Token type
+        inference_geo:
+          type: string
+          nullable: true
+          description: "Inference geography: global, not_available, us"
       required:
-        - start_time
-        - end_time
-        - description
         - amount
         - currency
 
