@@ -4,7 +4,7 @@
 
   <groupId>com.skylandsoft</groupId>
   <artifactId>claude-code-api</artifactId>
-  <version>1.0.1</version>
+  <version>1.0.2</version>
   <packaging>jar</packaging>
   <name>claude-code-api</name>
 
@@ -98,6 +98,7 @@
                 <java8>true</java8>
                 <additionalModelTypeAnnotations>@com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)</additionalModelTypeAnnotations>
                 <library>jersey3</library>
+                <failOnUnknownProperties>false</failOnUnknownProperties>
               </configOptions>
 
               <!-- override the default library to jersey2 -->
